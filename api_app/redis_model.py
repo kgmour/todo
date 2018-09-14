@@ -1,6 +1,7 @@
 # encoding=utf-8
 # Created by Quazi Nafiul Islam on 10/04/2018
 from typing import Dict, Union, Optional, ByteString
+from datetime import datetime
 
 import redis
 
@@ -49,15 +50,8 @@ class RedisNamespaceSession(object):
         """
         return self.rc.hset(self.namespace, key, value)
 
-    def setex(self, key: str, value: Union[str, int, float], time: str) -> int:
-        """
-        Like set but adds expiration time to key/value in redis database
-        :param key: The key you want to set
-        :param value: The value you want to set your key to
-        :param time: How long you want the key/value to live in redis
-        :return:
-        """
-        return self.rc.setex(self.namespace, key, time, value)
+    def expire(self, key, time):
+        self.rc.expire(self.namespace, )
 
     def delete(self, key):
         """
@@ -177,3 +171,46 @@ class RedisNamespaceModel(object):
         Gets all the keys and values of this
         """
         return self.sess.get_all()
+
+
+class TimeCheckNamespaceModel(RedisNamespaceModel):
+
+    def __setattr__(self, key, value):
+
+        if hasattr(self, 'sess'):
+            self._type_dict[key] = type(value)
+            if isinstance(value, bool):
+                return self.sess.set(f'{key}_timestamp', 1) if value else self.sess.set(f'{key}_timestamp', str(''))
+            return self.sess.set(f'{key}_timestamp', value)
+
+        return super().__setattr__(f'{key}_timestamp', value)
+
+    def __getattr__(self, item: str):
+        """
+        Gets the item in question. First it will check the
+        main object body, and then it will check redis for
+        the key.
+        """
+
+        try:
+            object_item = super().__getattribute__(f'{item}_timestamp') # TODO
+            return datetime.strptime(object_item, '%Y-%m-%d %H:%M:%S.%f')
+        except AttributeError:
+            # In case of an attribute error (which will
+            # usually be the case), we will look for the
+            # key in redis.
+            redis_item = self.sess.get(f'{item}_timestamp')
+            # redis_item = str(redis_item)
+            print(redis_item)
+            if redis_item:
+                return datetime.strptime(redis_item, '%Y-%m-%d %H:%M:%S.%f')
+                # return self._type_dict[f'{item}']#(redis_item) # TODO
+            elif redis_item is None:
+
+                # In case we do not find it, we will
+                # raise the same kind of error as
+                # the original __getattribute__
+                # method.
+                raise AttributeError(f"{item}_timestamp does not exist"
+                                     f" on either object or"
+                                     f" in redis.")

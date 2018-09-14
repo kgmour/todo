@@ -7,11 +7,12 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship, scoped_session, sessionmaker
-from api_app.my_hash import salt, hash_password, unhash_password
+from .my_hash import salt, hash_password, unhash_password
 from werkzeug.security import generate_password_hash, check_password_hash
 from strgen import StringGenerator
 # from creds import salt
-from api_app.redis_model import RedisNamespaceModel, RedisNamespaceSession
+from .redis_model import RedisNamespaceModel, TimeCheckNamespaceModel
+from datetime import datetime, timedelta
 #
 engine = create_engine('postgres://todoapi:todoapi@localhost:5432/postgres')
 metadata = MetaData(bind=engine)
@@ -72,6 +73,11 @@ class User(Base, PrimaryMixin):
                 'id': r.id}
 
     @classmethod
+    def create_redis_timestamp(cls, username):
+        rm = TimeCheckNamespaceModel('users')
+        rm.set(username, datetime.now())
+
+    @classmethod
     def login_return_token(cls, username, password):
         """Takes username and password and validates user.
         Also returns token to be used for future validation.
@@ -85,19 +91,23 @@ class User(Base, PrimaryMixin):
 
         if is_user:
             secret_key = StringGenerator("[\d\w]{10}").render()
-            rc = RedisNamespaceSession('users')
-            rc.setex('username', secret_key, 900) #need to create setex method in redis_model
-            token = hash_password(username+'-'+secret_key, salt)
+            rm = RedisNamespaceModel('users')
+            rm.set(username, secret_key) #need to create setex method in redis_model
+            cls.create_redis_timestamp(username)
+            token = hash_password(f'{username}_{secret_key}', salt)
             return token
 
     @classmethod
     def authenticate_user(cls, token):
-        username, secret_key = unhash_password(token, salt).split('-')
+        username, secret_key = unhash_password(token, salt).split('_')
 
-        rc = RedisNamespaceSession('users')
-        is_authenticated = rc.get(username)
+        rm = RedisNamespaceModel('users')
+        check_login_timestamp = datetime.now() - rm.get(f'{username}_timestamp')
 
-        return True if is_authenticated else False
+        if check_login_timestamp.seconds >= 900:
+            return False
+
+        return True
 
 
     @classmethod

@@ -24,9 +24,9 @@
 import redis
 from flask import Flask, request
 from flask_restful import Resource, Api
-from api_app.models import (User,
+from .models import (User,
                     ToDo, Session, generate_password_hash, check_password_hash)
-from api_app.serializers import UserSchema, TodoSchema, TodoTitleSchema, LoginSchema
+from .serializers import UserSchema, TodoSchema, TodoTitleSchema, LoginSchema
 
 r = redis.StrictRedis(host='localhost', port=6379, db=0)
 app = Flask(__name__)
